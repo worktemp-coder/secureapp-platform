@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Create account - SecureApp{% endblock %}
+
+{% block content %}
+<section class="form-panel">
+  <h1>Create account</h1>
+  <p class="muted">Use at least 12 characters for your password.</p>
+
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+
+    <div class="field">
+      {{ form.username.label(for="username") }}
+      {{ form.username(id="username", autocomplete="username", autofocus=true) }}
+      {% for error in form.username.errors %}
+        <p class="field-error">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="field">
+      {{ form.password.label(for="password") }}
+      {{ form.password(id="password", autocomplete="new-password") }}
+      {% for error in form.password.errors %}
+        <p class="field-error">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="field">
+      {{ form.confirm_password.label(for="confirm_password") }}
+      {{ form.confirm_password(id="confirm_password", autocomplete="new-password") }}
+      {% for error in form.confirm_password.errors %}
+        <p class="field-error">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    {{ form.submit(class="button") }}
+  </form>
+
+  <p class="form-foot">
+    Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a>.
+  </p>
+</section>
+{% endblock %}

@@ -1,0 +1,18 @@
+rules:
+  - id: secureapp-flask-debug-enabled
+    languages:
+      - python
+    message: Flask debug mode must not be enabled in committed application code.
+    severity: ERROR
+    patterns:
+      - pattern: $APP.run(..., debug=True, ...)
+
+  - id: secureapp-shell-execution
+    languages:
+      - python
+    message: Shell execution with untrusted input is prohibited.
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC(..., shell=True, ...)
+          - pattern: os.system(...)

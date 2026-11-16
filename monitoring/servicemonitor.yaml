@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: secureapp
+  namespace: secureapp
+  labels:
+    app.kubernetes.io/name: secureapp
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: secureapp
+  namespaceSelector:
+    matchNames:
+      - secureapp
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}{{ code }} - SecureApp{% endblock %}
+
+{% block content %}
+<section class="form-panel error-panel">
+  <p class="eyebrow">HTTP {{ code }}</p>
+  <h1>{{ message }}</h1>
+  <p class="muted">Return to the app and try again.</p>
+  <a class="button" href="{{ url_for('main.index') }}">Go home</a>
+</section>
+{% endblock %}

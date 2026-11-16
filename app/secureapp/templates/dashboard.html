@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - SecureApp{% endblock %}
+
+{% block content %}
+<section class="dashboard">
+  <div class="dashboard-heading">
+    <p class="eyebrow">Authenticated area</p>
+    <h1>Welcome, {{ user.username }}</h1>
+    <p class="muted">Your session is protected by server-side authorization checks.</p>
+  </div>
+
+  <div class="card-grid">
+    <article class="card">
+      <h2>Account</h2>
+      <dl class="details">
+        <dt>Username</dt>
+        <dd>{{ user.username }}</dd>
+        <dt>Created</dt>
+        <dd>{{ user.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+        <dt>Last sign-in</dt>
+        <dd>
+          {% if user.last_login_at %}
+            {{ user.last_login_at.strftime("%Y-%m-%d %H:%M UTC") }}
+          {% else %}
+            First session
+          {% endif %}
+        </dd>
+      </dl>
+    </article>
+
+    <article class="card">
+      <h2>Observability</h2>
+      <p>
+        Authentication success and failure counters are exported at
+        <code>/metrics</code> and aggregated in the Grafana security dashboard.
+      </p>
+      <p class="muted">Open Grafana on port 3000 during the local demo.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

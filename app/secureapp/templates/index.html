@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}SecureApp{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Hardened Flask platform</p>
+  <h1>Authentication with security built into the delivery pipeline.</h1>
+  <p class="lede">
+    This demo app is shipped through automated security gates, deployed to
+    k3s with least-privilege policy, and observed with Prometheus and Grafana.
+  </p>
+  <div class="hero-actions">
+    {% if current_user.is_authenticated %}
+      <a class="button" href="{{ url_for('main.dashboard') }}">Open dashboard</a>
+    {% else %}
+      <a class="button" href="{{ url_for('auth.login') }}">Sign in</a>
+      <a class="button secondary" href="{{ url_for('auth.register') }}">Create account</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card-grid">
+  <article class="card">
+    <h2>Secure defaults</h2>
+    <p>CSRF protection, login rate limiting, secure cookie flags, CSP, and password hashing with scrypt.</p>
+  </article>
+  <article class="card">
+    <h2>Delivery gates</h2>
+    <p>Bandit, Semgrep, git-secrets, pip-audit, Trivy, and a k3s smoke deployment run on every code change.</p>
+  </article>
+  <article class="card">
+    <h2>Operational visibility</h2>
+    <p>Authentication events and request metrics feed a Grafana security and reliability dashboard.</p>
+  </article>
+</section>
+{% endblock %}

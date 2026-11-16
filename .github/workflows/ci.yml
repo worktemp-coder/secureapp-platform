@@ -1,0 +1,271 @@
+name: CI
+
+on:
+  push:
+    branches: [main, prod]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, prod]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  test:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            app/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r app/requirements-dev.txt
+      - name: Ruff
+        run: ruff check app
+      - name: Pytest
+        run: pytest --cov=secureapp --cov-report=term-missing --cov-fail-under=80
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install git-secrets
+        run: |
+          git clone --depth 1 https://github.com/awslabs/git-secrets.git /tmp/git-secrets
+          sudo make install -C /tmp/git-secrets
+      - name: Scan full history
+        run: |
+          git secrets --register-aws
+          while IFS= read -r pattern; do
+            if [ -n "$pattern" ]; then
+              git secrets --add "$pattern"
+            fi
+          done < security/git-secrets-patterns.txt
+          git secrets --scan-history
+
+  sast:
+    name: SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: app/requirements-dev.txt
+      - name: Install scanners
+        run: pip install bandit semgrep
+      - name: Semgrep
+        run: |
+          semgrep scan \
+            --config security/semgrep.yml \
+            --config p/python \
+            --metrics=off \
+            --error \
+            --sarif \
+            --output semgrep.sarif \
+            app/secureapp
+      - name: Bandit
+        run: bandit -r app/secureapp -c security/bandit.yaml -f json -o bandit.json
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+      - name: Upload Bandit report
+        if: always() && hashFiles('bandit.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: bandit-report
+          path: bandit.json
+          retention-days: 7
+
+  deps:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit application dependencies
+        run: pip-audit -r app/requirements.txt --strict --format json --output pip-audit.json
+      - name: Upload audit report
+        if: always() && hashFiles('pip-audit.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: pip-audit-report
+          path: pip-audit.json
+          retention-days: 7
+
+  build-scan:
+    name: Build and scan image
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build --pull -t secureapp:${{ github.sha }} app
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: secureapp:${{ github.sha }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: secureapp:${{ github.sha }}
+          format: cyclonedx
+          output: sbom.cdx.json
+      - name: Save image artifact
+        run: |
+          docker save secureapp:${{ github.sha }} | gzip > secureapp-image.tar.gz
+          sha256sum secureapp-image.tar.gz sbom.cdx.json > sha256sums.txt
+      - name: Upload SARIF
+        if: always() && hashFiles('trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+      - name: Upload image artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: secureapp-image
+          path: |
+            secureapp-image.tar.gz
+            sbom.cdx.json
+            trivy-image.sarif
+            sha256sums.txt
+          retention-days: 7
+
+  deploy-smoke:
+    name: Deploy smoke test
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod')
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-kubectl@v5
+      - name: Install k3d
+        run: curl -sSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.9.0 bash
+      - name: Create cluster
+        run: |
+          k3d cluster create ci \
+            --servers 1 \
+            --agents 0 \
+            --wait \
+            --k3s-arg "--disable=traefik@server:0" \
+            --k3s-arg "--disable=servicelb@server:0" \
+            --k3s-arg "--disable=metrics-server@server:0"
+      - name: Build and import image
+        run: |
+          docker build --pull -t secureapp:dev app
+          k3d image import -c ci secureapp:dev
+      - name: Deploy application
+        run: |
+          kubectl apply -f deploy/k8s/namespace.yaml
+          kubectl -n secureapp create secret generic secureapp-secrets \
+            --from-literal=SECRET_KEY="$(openssl rand -hex 32)"
+          kubectl apply -k deploy/k8s
+          kubectl -n secureapp rollout status deployment/secureapp --timeout=180s
+          kubectl -n secureapp get pods,svc,pvc,networkpolicy,serviceaccount
+      - name: Smoke test
+        run: |
+          kubectl -n secureapp port-forward svc/secureapp 8080:80 >/tmp/port-forward.log 2>&1 &
+          PF_PID=$!
+          trap 'kill $PF_PID' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/readyz
+          curl -fsS http://127.0.0.1:8080/auth/login | grep -qi "Sign in"
+          curl -fsSI http://127.0.0.1:8080/auth/login | grep -qi "x-content-type-options: nosniff"
+          curl -fsS http://127.0.0.1:8080/metrics | grep -q flask_http_request_total
+
+  monitoring-validate:
+    name: Validate monitoring manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.2
+      - uses: azure/setup-kubectl@v5
+      - name: Render and validate
+        run: |
+          helm template monitoring kube-prometheus-stack \
+            --repo https://prometheus-community.github.io/helm-charts \
+            --version 93.3.0 \
+            --namespace monitoring \
+            -f monitoring/values/kube-prometheus-stack-lowmem.yaml \
+            > /tmp/monitoring-rendered.yaml
+          test -s /tmp/monitoring-rendered.yaml
+          kubectl kustomize deploy/k8s > /tmp/secureapp-rendered.yaml
+          python - <<'PY'
+          import json
+          import pathlib
+
+          lines = pathlib.Path("monitoring/dashboards/secureapp-dashboard.yaml").read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if "secureapp-dashboard.json: |-" in line) + 1
+          payload = "\n".join(line[4:] if line.startswith("    ") else line for line in lines[start:])
+          dashboard = json.loads(payload)
+          assert dashboard["uid"] == "secureapp-sre"
+          assert len(dashboard["panels"]) >= 5
+          print(f"Dashboard valid with {len(dashboard['panels'])} panels")
+          PY
+
+  release:
+    name: Release image artifact
+    runs-on: ubuntu-latest
+    needs: build-scan
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: secureapp-image
+          path: artifacts
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            artifacts/secureapp-image.tar.gz
+            artifacts/sbom.cdx.json
+            artifacts/trivy-image.sarif
+            artifacts/sha256sums.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
