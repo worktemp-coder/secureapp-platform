@@ -1,47 +1,49 @@
 # Threat Model
 
+This is a small app, so the threat model is small. I focused on the things that change when an app is put in a container and a cluster: credentials, the image, Kubernetes permissions, and network access.
+
 ## Assets
 
 - User credentials and password hashes.
-- Session cookies and the application signing secret.
-- Application availability and the local SQLite database.
-- CI credentials supplied by GitHub (`GITHUB_TOKEN`).
-- Container image and release artifacts.
+- Session cookies and the app signing secret.
+- The local SQLite database and application availability.
+- The CI token supplied by GitHub.
+- The container image and release artifacts.
 
 ## Actors
 
-- Anonymous internet or local-network user.
-- Authenticated application user.
-- Developer with repository write access.
-- Compromised dependency or container base image.
-- Attacker with access to the local Kubernetes host.
+- An anonymous user on the local machine or network.
+- A signed-in user.
+- A developer with write access to the repository.
+- A compromised dependency or base image.
+- Someone with access to the local Kubernetes host.
 
-## Trust Boundaries
+## Trust boundaries
 
 1. Browser to Flask/Gunicorn.
 2. GitHub Actions runner to the repository and release artifacts.
-3. kubelet/container runtime to the application container.
-4. `secureapp` namespace to the monitoring and `kube-system` namespaces.
-5. Local developer environment to the k3d cluster and generated secrets.
+3. kubelet/container runtime to the app container.
+4. `secureapp` namespace to `monitoring` and `kube-system`.
+5. Local development environment to the k3d cluster and generated secrets.
 
-## Threats and Mitigations
+## Threats and mitigations
 
-| Threat | Mitigation | Residual risk |
+| Threat | Mitigation | What is left |
 | --- | --- | --- |
-| Credential stuffing or password guessing | Login limit of 5 POSTs/minute by IP, generic failures, audit counters | No distributed limiter, account lockout, or MFA |
-| Session theft | `HttpOnly`, `SameSite=Lax`, strong session protection, `Secure` when HTTPS is used | Local demo uses HTTP |
-| Open redirect after login | Same-origin relative/same-host redirect validation; external, protocol-relative, and backslash targets rejected | URL parsing differences across clients remain possible |
-| SQL injection | SQLAlchemy parameterized queries; no raw user input in SQL | Database compromise or application logic bugs |
-| XSS | Jinja autoescaping and restrictive CSP | CSP allows only same-origin scripts/styles |
-| CSRF | Flask-WTF CSRF on forms and logout | API endpoints are not in scope |
-| Secret leakage | git-secrets in CI, gitignored local secret, GitHub-hosted token, no registry credentials | Developer could still paste a secret into an uncommitted file |
-| Vulnerable dependency or base image | pip-audit, Trivy, Dependabot | No guaranteed zero-day coverage; base tag is not digest-pinned |
-| Container breakout or privilege escalation | Non-root, read-only rootfs, dropped capabilities, no privilege escalation, RuntimeDefault seccomp | Shared kernel and local k3d runtime |
-| Lateral movement | Default-deny ingress/egress, DNS-only egress, monitoring-only ingress on port 8000 | Port-forward bypasses NetworkPolicy by design |
-| Data loss | PVC for SQLite, single replica | No replication, backup, or migration tooling |
-| CI artifact tampering | GitHub-hosted runners, SARIF upload, SBOM/checksums in release | No cryptographic signing or provenance attestation |
-| Observability data loss | Prometheus local storage with 6-hour retention | No long-term storage or Alertmanager |
+| Password guessing or credential stuffing | 5 POSTs/minute by IP, generic failures, audit counters | No shared rate limiter, account lockout, or MFA |
+| Session theft | HttpOnly, SameSite=Lax, strong session protection, Secure cookies when HTTPS is used | The local demo uses HTTP |
+| Open redirect after login | Same-origin relative or same-host targets only; external, protocol-relative, and backslash targets rejected | URL parsing differs between clients |
+| SQL injection | SQLAlchemy parameterised queries; no user input in raw SQL | Database compromise and logic bugs |
+| XSS | Jinja autoescaping and a restrictive CSP | Same-origin scripts and styles are allowed |
+| CSRF | Flask-WTF protection on forms and logout | JSON or API endpoints are not in scope |
+| Secret leakage | git-secrets in CI, gitignored local secret, GitHub-hosted token, no registry credentials | A secret can still be pasted into an uncommitted file |
+| Vulnerable dependency or base image | pip-audit, Trivy, Dependabot | New vulnerabilities can appear between scans |
+| Container escape or privilege escalation | Non-root user, read-only rootfs, dropped capabilities, no privilege escalation, RuntimeDefault seccomp | The local k3d runtime shares the host kernel |
+| Lateral movement | Default-deny ingress and egress, DNS-only egress, monitoring-only ingress on port 8000 | Port-forward bypasses NetworkPolicy by design |
+| Data loss | PVC for SQLite, single replica | No replication or backup |
+| CI artifact tampering | GitHub-hosted runners, SARIF upload, SBOM and checksums | No signing or provenance attestation |
+| Monitoring data loss | Six-hour Prometheus retention | No long-term storage or Alertmanager |
 
-## Out of Scope
+## Out of scope
 
-TLS/Ingress, external identity federation, MFA, email delivery, payment data, multi-tenant isolation, persistent production CD, and a full backup/restore strategy.
+TLS and ingress, external identity federation, MFA, email delivery, payment data, multi-tenant isolation, production deployment, and a full backup/restore plan.

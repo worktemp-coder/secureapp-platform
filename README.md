@@ -1,90 +1,78 @@
 # SecureApp Platform
 
-A third-year B.Tech portfolio project that demonstrates secure software delivery end to end: a hardened Flask authentication app, automated security gates in GitHub Actions, a least-privilege Kubernetes deployment, and a Grafana dashboard for security and reliability signals.
+SecureApp is a small Flask application for practising secure delivery. It has registration and login, runs on Kubernetes, and exports metrics that Prometheus collects and Grafana displays. A GitHub Actions pipeline tests it, scans it, builds the image, and publishes release artifacts.
 
-The project is intentionally small enough to run on a laptop, but it exercises the same control points used in a production DevSecOps workflow: tests, secrets scanning, SAST, dependency auditing, container scanning, SBOM generation, policy-constrained deployment, and observability.
+The app is deliberately small. It uses SQLite on a persistent volume, runs one replica, and is reached with `kubectl port-forward`. There is no ingress, registry, or external database. That keeps the demo light enough for a laptop and makes the delivery and monitoring pieces easier to see.
 
-## What It Demonstrates
+## What is included
 
-- Secure authentication with scrypt password hashing, CSRF protection, generic login errors, safe post-login redirects, and rate limiting.
-- Security headers including CSP, frame denial, MIME sniffing protection, referrer policy, and HSTS on HTTPS requests.
-- Structured JSON audit events and Prometheus metrics for login outcomes, rate limiting, access denials, and HTTP traffic.
-- GitHub Actions gates for tests, secrets, SAST, dependencies, and container vulnerabilities.
-- Hardened Kubernetes workloads: non-root user, read-only root filesystem, dropped capabilities, RuntimeDefault seccomp, resource limits, disabled service-account token, RBAC separation, and default-deny networking.
-- Prometheus Operator `ServiceMonitor` plus a 9-panel Grafana dashboard.
+- Registration and login with scrypt password hashes, CSRF protection, generic login errors, safe redirects, and rate limits.
+- Security headers, JSON audit logs, and Prometheus counters for login outcomes, rate limiting, and access denials.
+- GitHub Actions checks for tests, secrets, static analysis, dependency vulnerabilities, and container vulnerabilities.
+- A Kubernetes deployment with a non-root user, read-only root filesystem, dropped capabilities, no service-account token, resource limits, RBAC, and default-deny networking.
+- A Prometheus `ServiceMonitor` and a Grafana dashboard for request, error, login, rate-limit, and pod signals.
 
-## Architecture
+## How it fits together
 
 ```text
-Developer
-   |
-   v
+source code
+    |
+    v
 GitHub Actions
-  test -> secret scan -> SAST -> dependency audit -> build + Trivy scan
-                                                     |
-                                                     v
-                                       image tar + SBOM + SARIF artifacts
-                                                     |
-                                                     v
-                                          k3d / k3s local cluster
-                                          +---------------------+
-                                          | namespace secureapp |
-                                          | Flask + SQLite PVC  |
-                                          | RBAC + NetworkPolicy|
-                                          +----------+----------+
-                                                     |
-                                       ServiceMonitor scrape :8000/metrics
-                                                     |
-                                                     v
-                                    Prometheus -> Grafana dashboard
+  test -> secret scan -> SAST -> dependency audit
+                                |
+                                v
+                       build + Trivy scan + SBOM
+                                |
+                                v
+                          k3d / k3s cluster
+                          +------------------+
+                          | secureapp        |
+                          | Flask + SQLite   |
+                          | RBAC + netpol    |
+                          +---------+--------+
+                                    |
+                          ServiceMonitor :8000/metrics
+                                    |
+                                    v
+                         Prometheus -> Grafana
 ```
 
-There is no container registry and no ingress controller. Images are imported directly into k3d for the demo, and Grafana/Prometheus are reached with `kubectl port-forward`. GitHub Releases attach the image tar, SBOM, SARIF report, and checksums for tagged versions.
+Images are imported directly into k3d. Tagged releases attach the compressed image, SBOM, SARIF report, and checksums to the GitHub Release.
 
-## Technology Stack
-
-| Layer | Choice |
-| --- | --- |
-| Application | Python 3.12 in CI/Docker, Flask 3.1, Gunicorn |
-| Data | SQLite on a Kubernetes PersistentVolumeClaim |
-| Auth | Flask-Login, Flask-WTF CSRF, Werkzeug scrypt |
-| Metrics | prometheus-flask-exporter, Prometheus Operator |
-| Tests | pytest, pytest-cov, Ruff |
-| Delivery | GitHub Actions, k3d/k3s, kubectl, Helm |
-| Observability | kube-prometheus-stack, Grafana |
-
-## Repository Layout
+## Repository layout
 
 ```text
 app/
-  secureapp/            Flask application package
+  secureapp/            Flask package
   tests/                pytest suite
-  Dockerfile            multi-stage, non-root runtime image
+  Dockerfile            Python 3.12 runtime image
   requirements*.txt
 deploy/k8s/             namespace, RBAC, NetworkPolicy, PVC, Deployment, Service
-monitoring/             low-memory Helm values, ServiceMonitor, Grafana dashboard
+monitoring/             Helm values, ServiceMonitor, Grafana dashboard
 security/               Bandit, Semgrep, and git-secrets configuration
-scripts/                cluster, deploy, monitoring, secret-scan helpers
-docs/                   OWASP mapping, threat model, runbook, demo, evaluation
+scripts/                local cluster, deployment, monitoring, and secret helpers
+docs/                   design notes, runbook, demo steps, evaluation
 .github/workflows/ci.yml
 ```
 
-## Local Application
+## Run the app locally
 
-Requirements: Python 3.12+ (host testing was done with 3.14), pip, and a POSIX shell.
+You need Python 3.12 or newer, pip, and a POSIX shell. The tests in this repo were run with Python 3.14.4.
 
 ```bash
 make venv
 make test
+
 cd app
 SECRET_KEY="$(openssl rand -hex 32)" ../.venv/bin/flask --app wsgi run --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000>, create an account with a password of at least 12 characters, and sign in.
+Open <http://127.0.0.1:8000> and create an account. Passwords need at least 12 characters.
 
-The test suite currently has **18 passing tests** and **92.95% statement coverage**; CI enforces a minimum of 80%.
+Current test result: **18 passed**, with **92.95%** statement coverage. CI fails below 80%.
 
-### Container Demo
+### Run the container
 
 ```bash
 docker build --pull -t secureapp:dev app
@@ -96,20 +84,20 @@ docker run --rm -p 8080:8000 \
   secureapp:dev
 ```
 
-Open <http://127.0.0.1:8080/auth/login>. The container runs as UID/GID 10001, uses production mode, and serves `/healthz`, `/readyz`, and `/metrics`.
+The image runs as UID/GID 10001. Health, readiness, and metrics are available at `/healthz`, `/readyz`, and `/metrics`.
 
-## Local Kubernetes Demo
+## Run the Kubernetes demo
 
-Requirements: Docker, k3d, kubectl, Helm, jq, openssl, and curl. The local demo was sized for roughly 3 GB of memory for k3s + app + monitoring.
+You need Docker, k3d, kubectl, Helm, jq, openssl, and curl. The full stack, including monitoring, needs roughly 3 GB of RAM.
 
 ```bash
-# Create k3d, build/import the image, generate the app secret, deploy the app
+# Create the cluster, build and import the image, apply the manifests
 make deploy
 
-# Optional: install Prometheus/Grafana and the dashboard (~1 GB additional RAM)
+# Install Prometheus, Grafana, and the dashboard
 make monitoring
 
-# Forward ports in separate terminals
+# Forward the ports in separate terminals
 kubectl -n secureapp port-forward svc/secureapp 8080:80
 kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80
 kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090
@@ -117,15 +105,15 @@ kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 909
 
 Application: <http://127.0.0.1:8080>
 
-Grafana: <http://127.0.0.1:3000> (user `admin`; retrieve the generated password below)
+Grafana: <http://127.0.0.1:3000>. The user is `admin`.
 
 ```bash
 kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d
 ```
 
-The app secret is generated locally at `deploy/k8s/secret.yaml`, which is gitignored and must never be committed.
+The app secret is written to `deploy/k8s/secret.yaml`. That file is gitignored and should not be committed.
 
-To exercise the dashboard, register and sign in, then attempt several wrong passwords (the login limit is 5 POST attempts per minute per client). The dashboard shows request rate, p95 latency, 5xx ratio, failed logins, login outcomes, rate-limited requests, pod CPU/memory, deployment availability, and container restarts.
+To put data on the dashboard, register a user, sign in, and try a few wrong passwords. The login limit is five POST requests per minute per client. The dashboard shows request rate, p95 latency, 5xx ratio, failed logins, login outcomes, rate-limited requests, pod CPU and memory, deployment availability, and container restarts.
 
 Useful commands:
 
@@ -136,67 +124,63 @@ kubectl -n secureapp get pods,svc,pvc,networkpolicy,serviceaccount
 kubectl -n secureapp get events --sort-by=.lastTimestamp
 ```
 
-## CI/CD Pipeline
+## CI pipeline
 
-`.github/workflows/ci.yml` runs on pushes and pull requests to `main` and `prod`, and on `v*` tags.
+The workflow in `.github/workflows/ci.yml` runs on pushes and pull requests to `main` and `prod`, and on `v*` tags.
 
-| Job | Purpose |
+| Job | What it does |
 | --- | --- |
-| `test` | Ruff and pytest with an 80% coverage gate |
-| `secret-scan` | git-secrets over the full repository history |
-| `sast` | Semgrep custom + Python rules, Bandit, SARIF upload |
+| `test` | Ruff and pytest, with an 80% coverage floor |
+| `secret-scan` | git-secrets over the full history |
+| `sast` | Semgrep and Bandit, with SARIF upload |
 | `deps` | pip-audit against runtime requirements |
-| `build-scan` | Container build, Trivy HIGH/CRITICAL scan, CycloneDX SBOM, image tar artifact |
-| `deploy-smoke` | Deploys to an ephemeral k3d cluster on `main`/`prod` pushes and tests health, login page, headers, and metrics |
-| `monitoring-validate` | Renders the Helm chart, renders Kustomize, and validates the dashboard JSON |
-| `release` | On a `v*` tag, attaches the image tar, SBOM, SARIF, and checksums to the GitHub Release |
+| `build-scan` | Builds the image, scans it with Trivy, creates an SBOM and image artifact |
+| `deploy-smoke` | Deploys to a temporary k3d cluster on `main`/`prod` pushes and checks health, login, headers, and metrics |
+| `monitoring-validate` | Renders the Helm chart and Kustomize output, and validates the dashboard JSON |
+| `release` | On a `v*` tag, attaches the image, SBOM, SARIF, and checksums to the release |
 
-No custom repository secrets are required; the workflow uses the built-in `GITHUB_TOKEN`. The repository must be public for SARIF results to appear in GitHub code scanning.
+No repository secrets are needed. The workflow uses `GITHUB_TOKEN`. The repository is public so GitHub can display code-scanning results.
 
-The scanners are deliberately run in CI only. Local development uses pytest, Ruff, Docker, k3d, and Helm.
+Security scanners run in CI rather than in local hooks. Local work uses pytest, Ruff, Docker, k3d, and Helm.
 
 ## Configuration
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SECRET_KEY` | Random in development; required in production | Must be stable and secret outside tests |
+| `SECRET_KEY` | Random in development; required in production | Used to sign sessions |
 | `DATABASE_URL` | `sqlite:///app.db` | Kubernetes uses `sqlite:////data/app.db` |
 | `APP_ENV` | `development` | `production` requires `SECRET_KEY` |
-| `COOKIE_SECURE` | `false` | Set `true` when served over HTTPS |
-| `LOG_LEVEL` | `INFO` | Structured JSON logs |
-| `RATELIMIT_STORAGE_URI` | `memory://` | In-process; limits are approximate across Gunicorn workers |
+| `COOKIE_SECURE` | `false` | Set to `true` when serving over HTTPS |
+| `LOG_LEVEL` | `INFO` | Controls JSON log output |
+| `RATELIMIT_STORAGE_URI` | `memory://` | Per-process storage; limits are approximate across workers |
 
-## Security Notes and Scope
+## Security notes
 
-Implemented controls:
+The app has CSRF protection, secure cookie settings, generic login failures, scrypt password hashes, and a login redirect check that rejects external, protocol-relative, and backslash targets. It also sets a content security policy and the usual frame, MIME, referrer, and permissions headers. HSTS is added when Flask sees an HTTPS request.
 
-- CSRF on state-changing forms; secure session cookie attributes; `SameSite=Lax`; strong session protection.
-- scrypt password hashes; username normalization and validation; generic invalid-credentials response.
-- Login limit of 5 requests/minute and registration limit of 3 requests/minute by remote address.
-- Safe `next` redirect handling that rejects external, protocol-relative, and backslash-based targets.
-- CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and conditional HSTS.
-- JSON audit logging for login, registration, logout, access denial, and rate-limit events.
-- Container and pod hardening, separate deployment ServiceAccount, Role/RoleBinding, and default-deny NetworkPolicy.
+The pod runs as a non-root user with a read-only root filesystem, dropped capabilities, and the RuntimeDefault seccomp profile. The service account token is disabled. A default-deny NetworkPolicy allows monitoring to scrape port 8000 and allows DNS lookups. A separate `secureapp-deployer` Role exists for deployment tasks.
 
-Intentional limits for a laptop-sized academic project:
+The runtime image removes pip and setuptools after dependencies are installed, partly to reduce the package surface and partly to keep the image scanner output clean.
 
-- SQLite with a single application replica and no schema-migration framework.
-- No TLS/Ingress, external identity provider, MFA, email verification, password reset, or account lockout.
-- No container registry; tagged releases provide an image tar artifact instead.
-- Prometheus uses short-lived local storage (6-hour retention); no Alertmanager, Loki, or long-term storage.
-- No Terraform, tfsec, Checkov, or OWASP Dependency-Check. Cloud/IaC scanners were replaced by representative application and container gates.
-- `memory://` rate-limit storage is per process and is not a distributed limiter.
-- The CI deployment is a smoke test, not continuous delivery to a persistent production cluster.
+## Known limits
+
+- SQLite and one replica mean there is no horizontal scaling or database failover.
+- There is no TLS or ingress in the demo. `COOKIE_SECURE` stays `false`.
+- There is no MFA, email verification, password reset, or account lockout.
+- Rate limiting is in memory and per worker.
+- Prometheus keeps six hours of local data. There is no Alertmanager, Loki, or long-term storage.
+- There is no container registry, Terraform, cloud deployment, or continuous delivery to a permanent cluster.
+- The GitHub deployment check is a smoke test, not a production release process.
 
 ## Documentation
 
-- [OWASP Top 10 mapping](docs/OWASP.md)
+- [OWASP notes](docs/OWASP.md)
 - [Threat model](docs/THREAT_MODEL.md)
-- [Operational runbook](docs/RUNBOOK.md)
-- [Demo and screenshot checklist](docs/DEMO.md)
-- [GitHub setup and branch protection](docs/GITHUB_SETUP.md)
-- [Academic evaluation notes](docs/EVALUATION.md)
-- [Screenshot folder](docs/screenshots/README.md)
+- [Runbook](docs/RUNBOOK.md)
+- [Demo steps](docs/DEMO.md)
+- [GitHub setup](docs/GITHUB_SETUP.md)
+- [Evaluation notes](docs/EVALUATION.md)
+- [Screenshot list](docs/screenshots/README.md)
 
 ## License
 

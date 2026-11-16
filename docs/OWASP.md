@@ -1,24 +1,24 @@
-# OWASP Top 10 Mapping
+# OWASP Notes
 
-This document maps the application and delivery controls to the OWASP Top 10 (2021). It is an educational mapping, not a certification.
+I used the OWASP Top 10 (2021) as a checklist while building the app. This is not an audit or a certification.
 
-| Risk | Relevant controls | Evidence |
+| Risk | What I did | Where to look |
 | --- | --- | --- |
-| A01 Broken Access Control | Login-required dashboard, server-side `current_user` checks, safe `next` validation, separate RBAC role, default-deny NetworkPolicy | `app/secureapp/auth.py`, `app/secureapp/main.py`, `deploy/k8s/rbac.yaml`, `deploy/k8s/networkpolicy.yaml` |
-| A02 Cryptographic Failures | scrypt password hashes, random secret generation outside tests, signed sessions, `HttpOnly`/`SameSite` cookies, conditional HSTS | `app/secureapp/models.py`, `app/secureapp/__init__.py`, `app/secureapp/security.py` |
-| A03 Injection | SQLAlchemy query API, autoescaped Jinja templates, strict CSP, Bandit and Semgrep gates | `app/secureapp/auth.py`, `app/secureapp/templates/`, `security/`, CI `sast` job |
-| A04 Insecure Design | Minimal authentication scope, generic login errors, rate limits, threat model, explicit documented limitations | `app/secureapp/auth.py`, `docs/THREAT_MODEL.md` |
-| A05 Security Misconfiguration | Non-root UID 10001, read-only root filesystem, dropped capabilities, RuntimeDefault seccomp, restricted namespace, resource limits, security headers | `app/Dockerfile`, `deploy/k8s/`, CI `build-scan` |
-| A06 Vulnerable and Outdated Components | Version-constrained requirements, pip-audit, Trivy image scan, Dependabot | `app/requirements*.txt`, `.github/workflows/ci.yml`, `.github/dependabot.yml` |
-| A07 Identification and Authentication Failures | scrypt, generic failure message, login/register rate limits, strong session protection, logout invalidation | `app/secureapp/auth.py`, `app/secureapp/forms.py`, tests |
-| A08 Software and Data Integrity Failures | Trusted CI build path, image tar checksums, CycloneDX SBOM, tagged release artifacts, SARIF results | `.github/workflows/ci.yml` |
-| A09 Security Logging and Monitoring Failures | JSON audit events, login/rate-limit/access-denial counters, Prometheus ServiceMonitor, Grafana dashboard | `app/secureapp/telemetry.py`, `monitoring/` |
-| A10 Server-Side Request Forgery | No user-controlled server-side URL fetching; app egress restricted to DNS | `deploy/k8s/networkpolicy.yaml` |
+| A01 Broken Access Control | Dashboard requires login; `current_user` checks are server-side; redirect target is validated; Kubernetes RBAC and default-deny network policy | `app/secureapp/auth.py`, `app/secureapp/main.py`, `deploy/k8s/rbac.yaml`, `deploy/k8s/networkpolicy.yaml` |
+| A02 Cryptographic Failures | scrypt password hashes, random secret outside tests, signed sessions, HttpOnly/SameSite cookies, HSTS when HTTPS is used | `app/secureapp/models.py`, `app/secureapp/__init__.py`, `app/secureapp/security.py` |
+| A03 Injection | SQLAlchemy queries, autoescaped Jinja templates, CSP, Bandit and Semgrep | `app/secureapp/auth.py`, `app/secureapp/templates/`, `security/`, CI `sast` job |
+| A04 Insecure Design | Small auth scope, generic login errors, rate limits, written threat model, documented limits | `app/secureapp/auth.py`, `docs/THREAT_MODEL.md` |
+| A05 Security Misconfiguration | Non-root user, read-only rootfs, dropped capabilities, RuntimeDefault seccomp, restricted namespace, resource limits, security headers | `app/Dockerfile`, `deploy/k8s/`, CI `build-scan` |
+| A06 Vulnerable and Outdated Components | Constrained requirements, pip-audit, Trivy, Dependabot | `app/requirements*.txt`, `.github/workflows/ci.yml`, `.github/dependabot.yml` |
+| A07 Identification and Authentication Failures | scrypt, generic failure message, login/register limits, strong session protection, logout | `app/secureapp/auth.py`, `app/secureapp/forms.py`, tests |
+| A08 Software and Data Integrity Failures | CI-built image, checksums, CycloneDX SBOM, tagged release artifacts, SARIF results | `.github/workflows/ci.yml` |
+| A09 Security Logging and Monitoring Failures | JSON audit events, login/rate-limit/access-denial counters, ServiceMonitor, Grafana dashboard | `app/secureapp/telemetry.py`, `monitoring/` |
+| A10 Server-Side Request Forgery | No user-controlled server-side fetch; app egress is limited to DNS | `deploy/k8s/networkpolicy.yaml` |
 
-## Gaps
+## Where it falls short
 
-- No MFA, email verification, password reset, account lockout, or breached-password checking.
-- No Web Application Firewall or DDoS protection.
-- No independent penetration test; scanner results and automated tests are the current evidence.
-- SARIF code scanning requires a public repository and appropriate GitHub permissions.
-- The local HTTP demo intentionally sets `COOKIE_SECURE=false`; production use should terminate TLS and set it to `true`.
+- There is no MFA, email verification, password reset, account lockout, or breached-password check.
+- There is no WAF or DDoS protection.
+- No independent penetration test has been done. The evidence here is tests and scanner output.
+- SARIF results need a public repository and the right GitHub permissions.
+- The local demo runs over HTTP and sets `COOKIE_SECURE=false`. Anything exposed outside the laptop should use TLS.

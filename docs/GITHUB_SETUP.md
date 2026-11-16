@@ -1,42 +1,44 @@
 # GitHub Setup
 
-The repository is intended to be public at:
+The repository is public at:
 
 ```text
 git@github.com:worktemp-coder/secureapp-platform.git
 ```
 
-The assistant creates files only; the repository owner performs authentication, commits, pushes, branch protection, and screenshots.
+The public setting is needed for code scanning and SARIF uploads.
 
-## 1. Authenticate and Set Identity
+## Push access
 
-Use GitHub CLI with HTTPS credentials:
+The current remote uses SSH. If the key is already on GitHub, this is enough:
+
+```bash
+ssh -T git@github.com
+git push -u origin main
+```
+
+If you need a new key:
+
+```bash
+ssh-keygen -t ed25519 -C "you@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Add the public key at <https://github.com/settings/ssh/new>, then test it:
+
+```bash
+ssh -T git@github.com
+```
+
+For HTTPS instead, authenticate with the GitHub CLI and change the remote:
 
 ```bash
 gh auth login
 gh auth setup-git
-git config --global user.name "Your Name"
-git config --global user.email "you@example.com"
 git remote set-url origin https://github.com/worktemp-coder/secureapp-platform.git
 ```
 
-Alternatively, keep SSH and upload a key:
-
-```bash
-ssh-keygen -t ed25519 -C "you@example.com"
-gh ssh-key add ~/.ssh/id_ed25519.pub
-ssh -T git@github.com
-```
-
-If the repository does not exist yet:
-
-```bash
-gh repo create worktemp-coder/secureapp-platform --public --source=. --remote=origin
-```
-
-Do not use `--push` until the files are reviewed and committed.
-
-## 2. Commit and Push Main
+## Commit and push main
 
 ```bash
 git status
@@ -46,29 +48,30 @@ git commit -m "feat: build secureapp platform"
 git push -u origin main
 ```
 
-The public repository is required for SARIF upload and GitHub code scanning.
+Before committing, check that `deploy/k8s/secret.yaml` does not appear in `git status`. It is gitignored and should stay out of the repository.
 
-## 3. Create the Production Branch
+## Create the production branch
 
-After the first successful `main` push:
+After `main` is pushed:
 
 ```bash
 git switch -c prod
 git push -u origin prod
+git switch main
 ```
 
-CI runs on both `main` and `prod`. The `deploy-smoke` job runs on pushes to either branch.
+The CI workflow runs on both branches. The `deploy-smoke` job runs only on pushes to `main` or `prod`.
 
-## 4. Protect Main and Prod
+## Protect main and prod
 
-In **Settings > Branches**, add a branch protection rule (or ruleset) for `main` and `prod`:
+In **Settings > Branches**, add a branch protection rule or ruleset for `main` and `prod`:
 
 - Require a pull request before merging.
 - Require status checks to pass.
 - Require branches to be up to date before merging.
 - Block force pushes and deletions.
 
-Require these check names:
+Require these checks:
 
 - `Test and lint`
 - `Secret scan`
@@ -77,11 +80,11 @@ Require these check names:
 - `Build and scan image`
 - `Validate monitoring manifests`
 
-Do not require `Deploy smoke test` for pull requests: that job is intentionally limited to pushes to `main` and `prod`.
+Do not require `Deploy smoke test` for pull requests. That job is limited to pushes to `main` and `prod`.
 
-## 5. Verify the Pipeline
+## Check the pipeline
 
-Open **Actions > CI** after the push. The expected jobs are:
+Open **Actions > CI** after the push. A normal run should show:
 
 ```text
 Test and lint
@@ -109,6 +112,6 @@ The release should contain:
 - `trivy-image.sarif`
 - `sha256sums.txt`
 
-## 6. Capture Evidence
+## Screenshots
 
-Follow [DEMO.md](DEMO.md) for the local and GitHub screenshot checklist. Store images in `docs/screenshots/` using the listed filenames.
+The list of screenshots and the demo steps are in [DEMO.md](DEMO.md). Put the images in `docs/screenshots/`.
