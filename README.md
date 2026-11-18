@@ -12,6 +12,18 @@ The app is deliberately small. It uses SQLite on a persistent volume, runs one r
 - A Kubernetes deployment with a non-root user, read-only root filesystem, dropped capabilities, no service-account token, resource limits, RBAC, and default-deny networking.
 - A Prometheus `ServiceMonitor` and a Grafana dashboard for request, error, login, rate-limit, and pod signals.
 
+## Screenshots
+
+| Sign in | Signed-in dashboard |
+| --- | --- |
+| <img src="docs/screenshots/01-login.png" alt="SecureApp sign-in page" width="420"> | <img src="docs/screenshots/02-authenticated-dashboard.png" alt="SecureApp signed-in dashboard" width="420"> |
+
+| Grafana dashboard | Prometheus target |
+| --- | --- |
+| <img src="docs/screenshots/04-grafana-overview.png" alt="Grafana SecureApp Security and SRE dashboard" width="420"> | <img src="docs/screenshots/05-prometheus-secureapp-target.png" alt="Prometheus secureapp target marked UP" width="420"> |
+
+The rest, including the rate-limit page, Kubernetes resources, and CI evidence, are in [docs/screenshots](docs/screenshots/README.md).
+
 ## How it fits together
 
 ```text
@@ -178,7 +190,6 @@ The runtime image removes pip and setuptools after dependencies are installed, p
 - [Threat model](docs/THREAT_MODEL.md)
 - [Runbook](docs/RUNBOOK.md)
 - [Demo steps](docs/DEMO.md)
-- [GitHub setup](docs/GITHUB_SETUP.md)
 - [Evaluation notes](docs/EVALUATION.md)
 - [Screenshot list](docs/screenshots/README.md)
 

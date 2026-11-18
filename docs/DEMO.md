@@ -1,6 +1,6 @@
 # Demo and Screenshot List
 
-The demo takes about 10 to 15 minutes. Use passing runs and clean terminal output for screenshots.
+The demo takes about 10 to 15 minutes. The screenshots already in `docs/screenshots/` were captured from this flow. If you repeat the demo, use a passing CI run and clean terminal output.
 
 ## 1. Start the local stack
 
@@ -29,16 +29,17 @@ kubectl -n secureapp get pods,svc,pvc,networkpolicy,serviceaccount
 kubectl -n secureapp get deployment secureapp -o yaml | grep -E 'runAsNonRoot|readOnlyRootFilesystem|allowPrivilegeEscalation|automountServiceAccountToken'
 ```
 
-Screenshot: `docs/screenshots/03-kubectl-resources.png`.
+Screenshot: `docs/screenshots/07-kubectl-resources.png`.
 
-## 3. Show login and metrics
+## 3. Show login and rate limiting
 
 1. Open <http://127.0.0.1:8080>.
 2. Capture the sign-in page as `01-login.png`.
-3. Create a demo account, for example `demo_user`, with a password of at least 12 characters.
-4. Try a wrong password six times to hit the 429 limit.
-5. Wait a minute, then sign in.
-6. Capture the signed-in dashboard as `02-authenticated-dashboard.png`.
+3. Create an account, for example `demo_user1`, with a password of at least 12 characters.
+4. Sign in and capture the dashboard as `02-authenticated-dashboard.png`.
+5. Sign out and capture the landing page as `03-landing-page.png`.
+6. Try a wrong password six times and capture the 429 page as `06-rate-limit.png`.
+7. Wait a minute, then sign in again.
 
 Optional checks:
 
@@ -48,24 +49,29 @@ curl -fsS http://127.0.0.1:8080/readyz
 curl -fsS http://127.0.0.1:8080/metrics | grep -E 'secureapp_login_total|secureapp_rate_limited_total'
 ```
 
-## 4. Show Grafana
+## 4. Show Grafana and Prometheus
 
 1. Open <http://127.0.0.1:3000> and sign in as `admin`.
 2. Open **Dashboards > SecureApp Security and SRE**.
 3. Set the time range to **Last 30 minutes** and refresh every 10 seconds.
-4. Capture the top row as `04-grafana-overview.png`.
-5. Scroll to failed logins, login outcomes, and rate-limited requests. Capture them as `05-grafana-security.png`.
-6. Open **Status > Targets** in Prometheus and check that the `secureapp` target is UP.
+4. Capture the top of the dashboard as `04-grafana-overview.png`.
+5. Open **Status > Targets** in Prometheus, filter for `secureapp`, and capture the UP target as `05-prometheus-secureapp-target.png`.
+
+Supporting screenshots are in the gallery:
+
+- `11-prometheus-overview.png`
+- `12-prometheus-targets.png`
+- `13-grafana-stack.png`
+- `14-kubernetes-networking.png`
+- `15-kubernetes-kubelet.png`
+- `16-kubernetes-storage.png`
 
 ## 5. Show GitHub evidence
 
 After the workflow is green on `main`:
 
-1. Open **Actions > CI** and capture the successful run as `06-actions-green.png`.
-2. Open **Security > Code scanning** and capture the results as `07-code-scanning.png`.
-3. Open the run's **Artifacts** section and capture it as `08-artifacts.png`.
-4. Open a pull request and capture the green checks as `09-pr-checks.png`.
-5. Push a `v*` tag, wait for the release job, and capture the release assets as `10-release.png`.
-6. Open **Settings > Branches** and capture the protected `main` rule as `11-branch-protection.png`.
+1. Open **Actions > CI** and capture the successful run as `08-actions-green.png`. The release job is skipped on `main` and only runs for tags.
+2. Open the run's **Artifacts** section and capture `09-actions-artifacts.png`.
+3. Open a pull request and capture the checks as `10-pr-checks.png`.
 
 Do not include terminal output or screenshots that contain secrets or tokens.
